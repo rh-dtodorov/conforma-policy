@@ -75,6 +75,7 @@ Rules included:
         
 * xref:packages/release_maven_repos.adoc#maven_repos__policy_data_missing[All maven artifacts have known repository URLs: Policy data validation]        
 * xref:packages/release_attestation_type.adoc#attestation_type__known_attestation_types_provided[Attestation type: Known attestation types provided]        
+* xref:packages/release_bts_presence.adoc#bts_presence__rule_data_valid[BTS output presence: BTS rule data valid]
 * xref:packages/release_base_image_registries.adoc#base_image_registries__allowed_registries_provided[Base image checks: Allowed base image registry prefixes list or signing identity was provided]        
 * xref:packages/release_buildah_build_task.adoc#buildah_build_task__disallowed_platform_patterns_pattern[Buildah build task: disallowed_platform_patterns format]        
 * xref:packages/release_cve.adoc#cve__rule_data_provided[CVE checks: Rule data provided]        
@@ -287,6 +288,8 @@ Rules included:
 * xref:packages/release_attestation_type.adoc#attestation_type__known_attestation_type[Attestation type: Known attestation type found]        
 * xref:packages/release_attestation_type.adoc#attestation_type__known_attestation_types_provided[Attestation type: Known attestation types provided]        
 * xref:packages/release_attestation_type.adoc#attestation_type__pipelinerun_attestation_found[Attestation type: PipelineRun attestation found]        
+* xref:packages/release_bts_presence.adoc#bts_presence__output_present[BTS output presence: BTS output recorded for promoted RPM]
+* xref:packages/release_bts_presence.adoc#bts_presence__rule_data_valid[BTS output presence: BTS rule data valid]
 * xref:packages/release_git_branch.adoc#git_branch__git_branch[Git branch checks: Builds have a trusted target branch]        
 * xref:packages/release_git_branch.adoc#git_branch__allowed_target_branch_patterns_format[Git branch checks: allowed_target_branch_patterns format]        
 * xref:packages/release_provenance_materials.adoc#provenance_materials__git_clone_source_matches_provenance[Provenance Materials: Git clone source matches materials provenance]        
@@ -552,6 +555,9 @@ a| Each Maven package listed in an SBOM must specify the repository URL that it 
 
 | xref:packages/release_attestation_type.adoc[attestation_type]
 a| Sanity checks related to the format of the image build's attestation.
+
+| xref:packages/release_bts_presence.adoc[bts_presence]
+a| On promote, check that a PipelineRun attestation for this artifact contains a bts-sign task result naming this artifact. This checks output presence, not the signature of a file inside the RPM.
 
 | xref:packages/release_base_image_registries.adoc[base_image_registries]
 a| This package is responsible for verifying the base (parent) images reported in the SLSA Provenace or the SBOM are allowed.

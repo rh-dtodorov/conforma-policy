@@ -1,0 +1,33 @@
+= BTS output presence Package
+
+On promote, check that a PipelineRun attestation for this artifact contains a bts-sign task result naming this artifact. This checks output presence, not the signature of a file inside the RPM.
+
+== Package Name
+
+* `bts_presence`
+
+== Rules Included
+
+[#bts_presence__output_present]
+=== link:#bts_presence__output_present[BTS output recorded for promoted RPM]
+
+Require a bts-sign result in a PipelineRun attestation whose subject is the promoted artifact when the RPA requires build-time signing.
+
+*Solution*: Sign the RPM payload on import and attest the resulting artifact.
+
+* Rule type: [rule-type-indicator failure]#FAILURE#
+* FAILURE message: `No attested BTS output found for %s`
+* Code: `bts_presence.output_present`
+* https://github.com/conforma/policy/blob/{page-origin-refhash}/policy/release/bts_presence/bts_presence.rego#L36[Source, window="_blank"]
+
+[#bts_presence__rule_data_valid]
+=== link:#bts_presence__rule_data_valid[BTS rule data valid]
+
+An explicitly configured BTS requirement must use true or false. Required BTS must be evaluated on either import or promote.
+
+*Solution*: Set bts_required to true or false and bts_release_phase to import or promote.
+
+* Rule type: [rule-type-indicator failure]#FAILURE#
+* FAILURE message: `Invalid BTS rule data: %s`
+* Code: `bts_presence.rule_data_valid`
+* https://github.com/conforma/policy/blob/{page-origin-refhash}/policy/release/bts_presence/bts_presence.rego#L56[Source, window="_blank"]

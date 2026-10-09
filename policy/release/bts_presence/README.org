@@ -1,0 +1,196 @@
+#+TITLE: BTS Presence Policy
+#+OPTIONS: ^:nil
+
+* What this policy does
+
+This policy verifies that RPM artifacts requiring build-time signing (BTS)
+have an attested bts-sign task result on the promote path but skips the BTS
+checks during import (because at that point BTS had not been ran yet).
+Does not verify the signature itself, only that a BTS output was recorded.
+
+TL;DR:
+Import path: skipped entirely.
+Promote path: enforces presence when bts_required=true.
+
+* How it works
+
+** Data flow
+
+1. RPA defines pushOptions.pushType ("import" or "promote") and
+   bts_required ("true" or "false")
+
+2. Release pipeline's collect-task-params extracts these values
+
+3. Pipeline passes them to ec validate via EXTRA_RULE_DATA:
+   #+BEGIN_SRC
+   EXTRA_RULE_DATA: "pipeline_intention=release,\
+     bts_release_phase=$(tasks.collect-task-params.results.extractedValues[3]),\
+     bts_required=$(tasks.collect-task-params.results.extractedValues[4])"
+   #+END_SRC
+
+4. EC CLI merges this into data.rule_data__configuration__
+
+5. Policy reads rule_data.get("bts_release_phase") and
+   rule_data.get("bts_required")
+
+** Phase distinction
+
+Same RPA and ECP evaluate both import and promote. The Release CR's
+pushOptions.pushType value determines which path runs.
+
+Import (pushType: import):
+- Koji draft build creation
+- BTS check skipped (policy rule condition fails at line 50)
+- Signing happens during this phase
+
+Promote (pushType: promote):
+- Pulp production release
+- BTS check enforced (policy requires attestation from import)
+- Verifies the artifact was signed during import
+
+** What gets checked
+
+The policy looks for a PipelineRun attestation (SLSA v0.2 or v1.0) where:
+- attestation.statement.subject.digest matches the artifact SHA256
+- a task named "bts-sign" exists in the attested pipeline
+- that task has a result named "BTS_OUTPUT"
+- BTS_OUTPUT value matches input.image.ref exactly
+
+Mismatch of any field produces a violation.
+
+* Configuration
+
+** RPA example (konflux-release-data)
+
+#+BEGIN_SRC yaml
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: ReleasePlanAdmission
+metadata:
+  name: rhel-kernel-10-push-rpm-prod
+spec:
+  data:
+    pushOptions:
+      pushType: import  # or "promote" for promotion Release
+    btsSignOptions:
+      enableBts: true
+      signKeytab:
+        principal: signing@IPA.REDHAT.COM
+        secret: bts-signing-secret
+        name: signing.keytab
+  policy: brew-rhel-sst-standard
+#+END_SRC
+
+** ECP configuration (optional override)
+
+The ECP can override bts_required via ruleData, but this is not the
+normal path. Standard practice: let the pipeline extract pushType from
+the RPA.
+
+#+BEGIN_SRC yaml
+spec:
+  sources:
+    - ruleData:
+        bts_required: "true"
+        bts_release_phase: "promote"
+#+END_SRC
+
+Pipeline-extracted values take precedence (data.rule_data__configuration__
+is highest priority).
+
+** Validation
+
+Rule data must be valid:
+- bts_required: "true" or "false" (string, not boolean)
+- bts_release_phase: "import" or "promote"
+
+Invalid values produce bts_presence.rule_data_valid violations.
+
+* Testing locally
+
+** Run policy against a snapshot
+
+#+BEGIN_SRC sh
+# Import path (should pass without BTS attestation)
+ec validate image \
+  --policy policy/ \
+  --output yaml \
+  --extra-rule-data bts_required=true,bts_release_phase=import \
+  registry.example/rpm@sha256:...
+
+# Promote path (requires BTS attestation)
+ec validate image \
+  --policy policy/ \
+  --output yaml \
+  --extra-rule-data bts_required=true,bts_release_phase=promote \
+  registry.example/rpm@sha256:...
+#+END_SRC
+
+** Run unit tests
+
+#+BEGIN_SRC sh
+make test TEST=bts_presence
+#+END_SRC
+
+Test coverage:
+- Import phase skips check (test_import_skips_bts_presence)
+- Promote phase requires attestation (test_promote_requires_attested_output)
+- Accepts SLSA v0.2 and v1.0 formats (test_promote_accepts_v02_and_v1_provenance)
+- Rejects mismatched refs (test_promote_rejects_other_output_or_subject)
+- Validates rule_data format (test_bad_rule_data_is_rejected)
+- Pipeline config overrides policy config (test_pipeline_extra_rule_data_overrides_policy_data)
+
+* Debugging
+
+** Check rule_data values at runtime
+
+#+BEGIN_SRC sh
+ec track release <release-name> --show-rule-data | grep bts
+#+END_SRC
+
+** Check which pipeline ran
+
+#+BEGIN_SRC sh
+kubectl get release <name> -o jsonpath='{.spec.data.pushOptions.pushType}'
+#+END_SRC
+
+** Verify attestation presence
+
+#+BEGIN_SRC sh
+ec validate image \
+  --policy policy/ \
+  --output json \
+  registry.example/rpm@sha256:... \
+  | jq '.components[].violations[] | select(.msg | contains("BTS"))'
+#+END_SRC
+
+* Common issues
+
+** "No attested BTS output found" on promote
+
+Cause: The import Release did not run bts-sign, or the attestation was
+not saved.
+
+Fix: Verify the import pipeline includes bts-sign task and Tekton
+Chains signed the PipelineRun.
+
+** Policy enforces on import when it should skip
+
+Cause: bts_release_phase is set to "promote" instead of "import".
+
+Fix: Check RPA pushOptions.pushType and Release CR overrides. Import
+Release should have pushType: import.
+
+** "Invalid BTS rule data" violation
+
+Cause: bts_required or bts_release_phase has wrong value type or format.
+
+Fix: Use string "true"/"false" for bts_required, "import"/"promote" for
+bts_release_phase. Pipeline extracts these from RPA - check RPA syntax.
+
+* Related documentation
+
+- policy/release/bts_presence/bts_presence.rego - policy implementation
+- policy/release/bts_presence/bts_presence_test.rego - test suite
+- antora/docs/modules/ROOT/pages/packages/release_bts_presence.adoc - generated docs
+- design/rule-data-merge-pattern.md - rule_data precedence
+- AGENTS.md - rule_data contract and input.image shape
